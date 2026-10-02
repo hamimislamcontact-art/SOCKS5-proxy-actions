@@ -1,4 +1,5 @@
 name: Host Chisel SOCKS5 Proxy
+
 on:
   workflow_dispatch:
     inputs:
@@ -6,10 +7,11 @@ on:
         description: Time to run chisel
         required: true
         default: 10m
-        
+
 jobs:
   socks5-proxy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Download latest chisel
         working-directory: ${{ runner.temp }}
@@ -18,22 +20,36 @@ jobs:
           mkdir chisel
           wget -O - https://github.com/jpillora/chisel/releases/download/$version/chisel_${version/v}_linux_amd64.gz | gzip -d > chisel/chisel
           chmod +x chisel/chisel
-          
+
       - name: Install chisel
         uses: AnimMouse/tool-cache@v1
         with:
           folder_name: chisel
-          
-      - name: Setup Cloudflare Tunnel client
-        uses: AnimMouse/setup-cloudflared@v1
-        with:
-          cloudflare_tunnel_credential: ${{ secrets.CLOUDFLARE_TUNNEL_CREDENTIAL }}
-          cloudflare_tunnel_configuration: ${{ secrets.CLOUDFLARE_TUNNEL_CONFIGURATION }}
-          cloudflare_tunnel_id: ${{ secrets.CLOUDFLARE_TUNNEL_ID }}
-          
+
+      - name: Download cloudflared
+        run: |
+          curl -L --output cloudflared \
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          chmod +x cloudflared
+
+      - name: Start Cloudflare Tunnel
+        run: |
+          nohup ./cloudflared tunnel run \
+            --token "${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}" \
+            > cloudflared.log 2>&1 &
+
+          sleep 5
+
+          echo "=== Cloudflare Tunnel Log ==="
+          cat cloudflared.log
+
       - name: Run chisel
-        run: timeout "${{ github.event.inputs.time-duration }}" chisel server --socks5 || true
-        
-      - name: Shutdown and view logs of Cloudflare Tunnel
+        run: |
+          timeout "${{ github.event.inputs.time-duration }}" \
+            chisel server --socks5 || true
+
+      - name: Show Cloudflare Tunnel logs
         if: always()
-        uses: AnimMouse/setup-cloudflared/shutdown@v1
+        run: |
+          echo "=== Cloudflare Tunnel Log ==="
+          cat cloudflared.log || true
